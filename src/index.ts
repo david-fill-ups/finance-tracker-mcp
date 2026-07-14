@@ -7,7 +7,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as api from "./client.js";
 
-const server = new McpServer({ name: "finance-tracker", version: "1.0.0" });
+export const server = new McpServer({ name: "finance-tracker", version: "1.0.0" });
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false } as const;
+const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true } as const;
 
 // helper – wrap handler so errors become MCP-friendly text responses
 function wrap<T>(fn: () => Promise<T>) {
@@ -28,6 +30,7 @@ server.tool(
   "get_profile",
   "Retrieve the current finance-tracker profile. Returns the profile id, name, and timestamps.",
   {},
+  READ_ONLY,
   wrap(() => api.getProfile()),
 );
 
@@ -51,6 +54,7 @@ server.tool(
   "list_guests",
   "List all guests who have been granted access to this finance-tracker profile. Returns email, permission level (VIEW or EDIT), and user info if they have an account.",
   {},
+  READ_ONLY,
   wrap(() => api.listGuests()),
 );
 
@@ -80,6 +84,7 @@ server.tool(
   {
     guestId: z.string().describe("ID of the guest to remove"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.removeGuest(params.guestId))(),
 );
 
@@ -89,10 +94,11 @@ server.tool(
   "list_people",
   "List all people in the household. Returns each person's name, role (self/spouse/dependent), their income sources, and expense count. Supports pagination via limit and offset.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listPeople({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listPeople(params) : api.listAllPeople())(),
 );
 
 server.tool(
@@ -118,10 +124,11 @@ server.tool(
 
 server.tool(
   "delete_person",
-  "Delete a person from the household. This will also affect associated income and expenses.",
+  "Permanently delete a person and cascade-delete their income. Associated personal expenses may also be affected. This cannot be undone.",
   {
     id: z.string().describe("ID of the person to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deletePerson(params.id))(),
 );
 
@@ -131,10 +138,11 @@ server.tool(
   "list_income",
   "List all income sources. Returns each income's name, amount, frequency (monthly/yearly/weekly/one_time), optional due month, notes, and the associated person. Supports pagination.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listIncome({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listIncome(params) : api.listAllIncome())(),
 );
 
 server.tool(
@@ -190,6 +198,7 @@ server.tool(
   {
     id: z.string().describe("ID of the income source to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteIncome(params.id))(),
 );
 
@@ -199,10 +208,11 @@ server.tool(
   "list_expenses",
   "List all expenses. Returns each expense's name, amount, frequency, type (JOINT or PERSONAL), category, provider, and associated person. Supports pagination.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listExpenses({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listExpenses(params) : api.listAllExpenses())(),
 );
 
 server.tool(
@@ -276,10 +286,11 @@ server.tool(
 
 server.tool(
   "delete_expense",
-  "Delete an expense by ID.",
+  "Permanently delete an expense by ID. This cannot be undone.",
   {
     id: z.string().describe("ID of the expense to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteExpense(params.id))(),
 );
 
@@ -289,10 +300,11 @@ server.tool(
   "list_categories",
   "List all expense categories. Returns each category's name, optional budget target, and a count of associated expenses. Supports pagination.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listCategories({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listCategories(params) : api.listAllCategories())(),
 );
 
 server.tool(
@@ -322,6 +334,7 @@ server.tool(
   {
     id: z.string().describe("ID of the category to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteCategory(params.id))(),
 );
 
@@ -331,10 +344,11 @@ server.tool(
   "list_loans",
   "List all loan borrowers. Returns each borrower's name, notes, and all their loan transactions (loans given, payments received, write-offs). Supports pagination.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listLoans({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listLoans(params) : api.listAllLoans())(),
 );
 
 server.tool(
@@ -364,6 +378,7 @@ server.tool(
   {
     id: z.string().describe("ID of the borrower to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteLoan(params.id))(),
 );
 
@@ -419,6 +434,7 @@ server.tool(
     loanId: z.string().describe("ID of the borrower (loan)"),
     txId: z.string().describe("ID of the transaction to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteLoanTransaction(params.loanId, params.txId))(),
 );
 
@@ -428,10 +444,11 @@ server.tool(
   "list_accounts",
   "List all financial accounts (bank accounts, investments, retirement, property, insurance, etc.). Returns institution, purpose, owner, category, and optional account number, notes, and login hint. Supports pagination.",
   {
-    limit: z.number().optional().describe("Max number of records to return"),
-    offset: z.number().optional().describe("Number of records to skip"),
+    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    offset: z.number().int().min(0).optional().describe("Number of records to skip"),
   },
-  (params) => wrap(() => api.listAccounts({ limit: params.limit, offset: params.offset }))(),
+  READ_ONLY,
+  (params) => wrap(() => params.limit || params.offset ? api.listAccounts(params) : api.listAllAccounts())(),
 );
 
 server.tool(
@@ -493,10 +510,13 @@ server.tool(
   {
     id: z.string().describe("ID of the account to delete"),
   },
+  DESTRUCTIVE,
   (params) => wrap(() => api.deleteAccount(params.id))(),
 );
 
 // ── Start server ────────────────────────────────────────────────────────────
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (process.env.NODE_ENV !== "test") {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

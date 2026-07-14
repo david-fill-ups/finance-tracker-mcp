@@ -4,6 +4,7 @@
 
 const BASE_URL = process.env.FINANCE_TRACKER_URL ?? "http://localhost:3000";
 const API_KEY = process.env.FINANCE_TRACKER_API_KEY ?? "";
+const PROFILE_ID = process.env.FINANCE_TRACKER_PROFILE_ID ?? "";
 
 // ── generic request helper ──────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ async function request<T>(
     "Content-Type": "application/json",
     Authorization: `Bearer ${API_KEY}`,
   };
+  if (PROFILE_ID) hdrs["X-Profile-Id"] = PROFILE_ID;
   const res = await fetch(url, {
     method,
     headers: hdrs,
@@ -344,6 +346,23 @@ export function deleteLoanTransaction(loanId: string, txId: string) {
 export function listAccounts(params: { limit?: number; offset?: number } = {}) {
   return request<AccountRecord[]>("GET", `/api/accounts${qs(params)}`);
 }
+
+async function allPages<T>(load: (params: { limit: number; offset: number }) => Promise<T[]>): Promise<T[]> {
+  const items: T[] = [];
+  const limit = 250;
+  for (let offset = 0; ; offset += limit) {
+    const page = await load({ limit, offset });
+    items.push(...page);
+    if (page.length < limit) return items;
+  }
+}
+
+export const listAllPeople = () => allPages(listPeople);
+export const listAllIncome = () => allPages(listIncome);
+export const listAllExpenses = () => allPages(listExpenses);
+export const listAllCategories = () => allPages(listCategories);
+export const listAllLoans = () => allPages(listLoans);
+export const listAllAccounts = () => allPages(listAccounts);
 
 export function createAccount(body: {
   institution: string;
