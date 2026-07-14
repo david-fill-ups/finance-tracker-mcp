@@ -350,11 +350,14 @@ export function listAccounts(params: { limit?: number; offset?: number } = {}) {
 async function allPages<T>(load: (params: { limit: number; offset: number }) => Promise<T[]>): Promise<T[]> {
   const items: T[] = [];
   const limit = 250;
-  for (let offset = 0; ; offset += limit) {
+  const maxPages = 100;
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {
+    const offset = pageNumber * limit;
     const page = await load({ limit, offset });
     items.push(...page);
     if (page.length < limit) return items;
   }
+  throw new Error(`Pagination safety limit reached (${maxPages * limit} records)`);
 }
 
 export const listAllPeople = () => allPages(listPeople);
