@@ -100,6 +100,8 @@ export interface Expense {
   personId?: string;
   classification?: string;
   categoryId?: string;
+  spendingTier?: "ESSENTIAL" | "CORE" | "DISCRETIONARY" | null;
+  minimumAmount?: number | null;
   notes?: string;
   provider?: string;
   accountNumber?: string;
@@ -247,6 +249,8 @@ export function createExpense(body: {
   personId?: string;
   classification?: string;
   categoryId?: string;
+  spendingTier?: "ESSENTIAL" | "CORE" | "DISCRETIONARY" | null;
+  minimumAmount?: number | null;
   notes?: string;
   provider?: string;
   accountNumber?: string;
@@ -263,6 +267,8 @@ export function updateExpense(id: string, body: {
   personId?: string;
   classification?: string;
   categoryId?: string;
+  spendingTier?: "ESSENTIAL" | "CORE" | "DISCRETIONARY" | null;
+  minimumAmount?: number | null;
   notes?: string;
   provider?: string;
   accountNumber?: string;

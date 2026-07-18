@@ -217,7 +217,7 @@ server.tool(
 
 server.tool(
   "create_expense",
-  "Add a new expense. Type is JOINT (shared household) or PERSONAL (requires personId). Frequency is monthly/yearly/weekly/one_time. Optionally assign a category (use list_categories for categoryId), classification, provider, accountNumber, and notes.",
+  "Add a new expense. Type is JOINT (shared household) or PERSONAL (requires personId). Frequency is monthly/yearly/weekly/one_time. spendingTier classifies priority: ESSENTIAL (must continue during unemployment), CORE (desired lifestyle), or DISCRETIONARY (first to cut). minimumAmount is only for ESSENTIAL expenses — the lowest realistic monthly amount after serious cuts. Optionally assign a category (use list_categories for categoryId), classification, provider, accountNumber, and notes.",
   {
     name: z.string().describe("Expense name/description"),
     amount: z.number().describe("Expense amount"),
@@ -225,6 +225,8 @@ server.tool(
     dueMonth: z.number().min(1).max(12).optional().describe("Month (1-12) when a yearly expense is due"),
     type: z.enum(["JOINT", "PERSONAL"]).describe("JOINT for shared expenses, PERSONAL for individual (requires personId)"),
     personId: z.string().optional().describe("Person ID — required when type is PERSONAL"),
+    spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).optional().describe("Spending priority tier: ESSENTIAL, CORE, or DISCRETIONARY"),
+    minimumAmount: z.number().optional().describe("Minimum monthly amount (only for ESSENTIAL tier) — the survival-level amount after serious cuts"),
     classification: z.string().optional().describe("Optional classification label"),
     categoryId: z.string().optional().describe("Category ID (use list_categories to find)"),
     notes: z.string().optional().describe("Optional notes"),
@@ -240,6 +242,8 @@ server.tool(
         dueMonth: params.dueMonth,
         type: params.type,
         personId: params.personId,
+        spendingTier: params.spendingTier,
+        minimumAmount: params.minimumAmount,
         classification: params.classification,
         categoryId: params.categoryId,
         notes: params.notes,
@@ -251,7 +255,7 @@ server.tool(
 
 server.tool(
   "update_expense",
-  "Update an existing expense. All fields are optional — only provided fields are changed.",
+  "Update an existing expense. All fields are optional — only provided fields are changed. Setting spendingTier to null removes classification. Changing tier away from ESSENTIAL automatically clears minimumAmount.",
   {
     id: z.string().describe("ID of the expense to update"),
     name: z.string().optional().describe("New name"),
@@ -260,6 +264,8 @@ server.tool(
     dueMonth: z.number().min(1).max(12).optional().describe("New due month"),
     type: z.enum(["JOINT", "PERSONAL"]).optional().describe("New type"),
     personId: z.string().optional().describe("New person ID"),
+    spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).nullable().optional().describe("New spending tier (null to unclassify)"),
+    minimumAmount: z.number().nullable().optional().describe("New minimum monthly amount (only for ESSENTIAL, null to clear)"),
     classification: z.string().optional().describe("New classification"),
     categoryId: z.string().optional().describe("New category ID"),
     notes: z.string().optional().describe("New notes"),
@@ -275,6 +281,8 @@ server.tool(
         dueMonth: params.dueMonth,
         type: params.type,
         personId: params.personId,
+        spendingTier: params.spendingTier,
+        minimumAmount: params.minimumAmount,
         classification: params.classification,
         categoryId: params.categoryId,
         notes: params.notes,
