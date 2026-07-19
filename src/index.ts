@@ -255,7 +255,7 @@ server.tool(
 
 server.tool(
   "update_expense",
-  "Update an existing expense. All fields are optional — only provided fields are changed. Setting spendingTier to null removes classification. Changing tier away from ESSENTIAL automatically clears minimumAmount.",
+  "Update an existing expense. All fields are optional — only provided fields are changed. Use clearSpendingTier to remove the spending classification and clearMinimumAmount to remove an ESSENTIAL minimum. Changing tier away from ESSENTIAL automatically clears minimumAmount.",
   {
     id: z.string().describe("ID of the expense to update"),
     name: z.string().optional().describe("New name"),
@@ -264,8 +264,10 @@ server.tool(
     dueMonth: z.number().min(1).max(12).optional().describe("New due month"),
     type: z.enum(["JOINT", "PERSONAL"]).optional().describe("New type"),
     personId: z.string().optional().describe("New person ID"),
-    spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).nullable().optional().describe("New spending tier (null to unclassify)"),
-    minimumAmount: z.number().nullable().optional().describe("New minimum monthly amount (only for ESSENTIAL, null to clear)"),
+    spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).optional().describe("New spending tier"),
+    minimumAmount: z.number().optional().describe("New minimum monthly amount (only for ESSENTIAL)"),
+    clearSpendingTier: z.boolean().optional().describe("Set true to remove the spending tier"),
+    clearMinimumAmount: z.boolean().optional().describe("Set true to clear the minimum amount so the full expense amount is required"),
     classification: z.string().optional().describe("New classification"),
     categoryId: z.string().optional().describe("New category ID"),
     notes: z.string().optional().describe("New notes"),
@@ -281,8 +283,8 @@ server.tool(
         dueMonth: params.dueMonth,
         type: params.type,
         personId: params.personId,
-        spendingTier: params.spendingTier,
-        minimumAmount: params.minimumAmount,
+        spendingTier: params.clearSpendingTier ? null : params.spendingTier,
+        minimumAmount: params.clearMinimumAmount ? null : params.minimumAmount,
         classification: params.classification,
         categoryId: params.categoryId,
         notes: params.notes,
