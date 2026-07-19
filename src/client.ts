@@ -6,6 +6,31 @@ const BASE_URL = process.env.FINANCE_TRACKER_URL ?? "http://localhost:3000";
 const API_KEY = process.env.FINANCE_TRACKER_API_KEY ?? "";
 const PROFILE_ID = process.env.FINANCE_TRACKER_PROFILE_ID ?? "";
 
+// ── String sanitization ──────────────────────────────────────────────────────
+
+/** Unescape common HTML entities that LLM clients sometimes inject into tool inputs. */
+function unescapeHtml(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
+/** Recursively sanitize all string values in a request body (trim + unescape HTML entities). */
+function sanitize<T>(obj: T): T {
+  if (typeof obj === "string") return unescapeHtml(obj.trim()) as T;
+  if (Array.isArray(obj)) return obj.map(sanitize) as T;
+  if (obj && typeof obj === "object") {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [k, sanitize(v)])
+    ) as T;
+  }
+  return obj;
+}
+
 // ── generic request helper ──────────────────────────────────────────────────
 
 async function request<T>(
@@ -22,7 +47,7 @@ async function request<T>(
   const res = await fetch(url, {
     method,
     headers: hdrs,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(sanitize(body)) : undefined,
   });
   if (!res.ok) {
     let detail = "";
