@@ -5,9 +5,37 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { PolicyAuthorizer, SafeAuditLogger, assertRuntimeMode, createAuthenticator, createCredentialProvider } from "./auth.js";
+import { getRequestContext, runInvocationWithContext, type RequestContext } from "./request-context.js";
+import { requireToolPolicy } from "./policies.js";
 import * as api from "./client.js";
 
-export const server = new McpServer({ name: "finance-tracker", version: "1.0.0" });
+export function createFinanceTrackerServer(options: { invocationContext?: RequestContext } = {}): McpServer {
+const rawServer = new McpServer({ name: "finance-tracker", version: "1.0.0" });
+const authorizer = new PolicyAuthorizer();
+const audit = new SafeAuditLogger();
+const server = new Proxy(rawServer, {
+  get(target, property, receiver) {
+    if (property !== "tool") return Reflect.get(target, property, receiver);
+    return (name: string, ...args: unknown[]) => {
+      const policy = requireToolPolicy(name);
+      const handlerIndex = args.length - 1;
+      const handler = args[handlerIndex] as (...values: unknown[]) => unknown;
+      args[handlerIndex] = async (...values: unknown[]) => runInvocationWithContext(options.invocationContext, async () => {
+        const { auth } = getRequestContext();
+        try {
+          authorizer.authorize(auth, policy);
+          audit.record({ action: name, principal: auth.principal, decision: "allowed" });
+          return await handler(...values);
+        } catch (error) {
+          audit.record({ action: name, principal: auth.principal, decision: "denied", reason: error instanceof Error ? error.message : "denied" });
+          throw error;
+        }
+      });
+      return (target.tool as (...toolArgs: unknown[]) => unknown).call(target, name, ...args);
+    };
+  },
+}) as McpServer;
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true } as const;
 
@@ -175,6 +203,7 @@ server.tool(
   "Update an existing income source. All fields are optional — only provided fields are changed.",
   {
     id: z.string().describe("ID of the income source to update"),
+    personId: z.string().optional().describe("Move the income source to this household person"),
     name: z.string().optional().describe("New name"),
     amount: z.number().optional().describe("New amount"),
     frequency: z.enum(["monthly", "yearly", "weekly", "one_time"]).optional().describe("New frequency"),
@@ -184,6 +213,7 @@ server.tool(
   (params) =>
     wrap(() =>
       api.updateIncome(params.id, {
+        personId: params.personId,
         name: params.name,
         amount: params.amount,
         frequency: params.frequency,
@@ -224,6 +254,7 @@ server.tool(
     amount: z.number().describe("Expense amount"),
     frequency: z.enum(["monthly", "yearly", "weekly", "one_time"]).describe("How often this expense recurs"),
     dueMonth: z.number().min(1).max(12).optional().describe("Month (1-12) when a yearly expense is due"),
+    occurrenceDate: z.string().optional().describe("YYYY-MM-DD date for a one-time expense"),
     type: z.enum(["JOINT", "PERSONAL"]).describe("JOINT for shared expenses, PERSONAL for individual (requires personId)"),
     personId: z.string().optional().describe("Person ID — required when type is PERSONAL"),
     spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).optional().describe("Spending priority tier: ESSENTIAL, CORE, or DISCRETIONARY"),
@@ -233,6 +264,8 @@ server.tool(
     notes: z.string().optional().describe("Optional notes"),
     provider: z.string().optional().describe("Service provider or vendor name"),
     accountNumber: z.string().optional().describe("Account or reference number"),
+    taxCategory: z.enum(["charitable", "mortgage_interest", "property_tax", "medical", "childcare", "business", "other"]).optional(),
+    deductiblePercent: z.number().min(0).max(100).optional(),
   },
   (params) =>
     wrap(() =>
@@ -241,6 +274,7 @@ server.tool(
         amount: params.amount,
         frequency: params.frequency,
         dueMonth: params.dueMonth,
+        occurrenceDate: params.occurrenceDate,
         type: params.type,
         personId: params.personId,
         spendingTier: params.spendingTier,
@@ -250,6 +284,8 @@ server.tool(
         notes: params.notes,
         provider: params.provider,
         accountNumber: params.accountNumber,
+        taxCategory: params.taxCategory,
+        deductiblePercent: params.deductiblePercent,
       }),
     )(),
 );
@@ -263,6 +299,8 @@ server.tool(
     amount: z.number().optional().describe("New amount"),
     frequency: z.enum(["monthly", "yearly", "weekly", "one_time"]).optional().describe("New frequency"),
     dueMonth: z.number().min(1).max(12).optional().describe("New due month"),
+    occurrenceDate: z.string().optional().describe("New YYYY-MM-DD occurrence date"),
+    clearOccurrenceDate: z.boolean().optional(),
     type: z.enum(["JOINT", "PERSONAL"]).optional().describe("New type"),
     personId: z.string().optional().describe("New person ID"),
     spendingTier: z.enum(["ESSENTIAL", "CORE", "DISCRETIONARY"]).optional().describe("New spending tier"),
@@ -274,6 +312,10 @@ server.tool(
     notes: z.string().optional().describe("New notes"),
     provider: z.string().optional().describe("New provider"),
     accountNumber: z.string().optional().describe("New account number"),
+    taxCategory: z.enum(["charitable", "mortgage_interest", "property_tax", "medical", "childcare", "business", "other"]).optional(),
+    clearTaxCategory: z.boolean().optional(),
+    deductiblePercent: z.number().min(0).max(100).optional(),
+    clearDeductiblePercent: z.boolean().optional(),
   },
   (params) =>
     wrap(() =>
@@ -282,6 +324,7 @@ server.tool(
         amount: params.amount,
         frequency: params.frequency,
         dueMonth: params.dueMonth,
+        occurrenceDate: params.clearOccurrenceDate ? null : params.occurrenceDate,
         type: params.type,
         personId: params.personId,
         spendingTier: params.clearSpendingTier ? null : params.spendingTier,
@@ -291,6 +334,8 @@ server.tool(
         notes: params.notes,
         provider: params.provider,
         accountNumber: params.accountNumber,
+        taxCategory: params.clearTaxCategory ? null : params.taxCategory,
+        deductiblePercent: params.clearDeductiblePercent ? null : params.deductiblePercent,
       }),
     )(),
 );
@@ -453,7 +498,7 @@ server.tool(
 
 server.tool(
   "list_accounts",
-  "List all financial accounts (bank accounts, investments, retirement, property, insurance, etc.). Returns institution, purpose, owner, category, and optional account number, notes, and login hint. Supports pagination.",
+  "List all financial accounts with household owner, balance, emergency-fund designation, and continuity details. Supports pagination.",
   {
     limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
@@ -464,26 +509,32 @@ server.tool(
 
 server.tool(
   "create_account",
-  "Add a new financial account record. Track bank accounts, investments, retirement accounts, property, insurance, and more. Owner indicates who holds the account (self/spouse/joint/child/other). Category classifies the account type.",
+  "Add a financial account. Use personId for an individual owner or omit it for joint ownership.",
   {
     institution: z.string().describe("Financial institution name (e.g., Chase, Fidelity)"),
     purpose: z.string().describe("Purpose or description of the account (e.g., Primary Checking, 401k)"),
-    owner: z.enum(["self", "spouse", "joint", "child", "other"]).describe("Who owns this account"),
+    personId: z.string().optional().describe("Household person ID; omit for joint ownership"),
     category: z.enum(["banking", "investment", "retirement", "property", "insurance", "other"]).describe("Account category"),
     accountNumber: z.string().optional().describe("Account number (last 4 digits recommended for security)"),
     notes: z.string().optional().describe("Optional notes"),
     loginHint: z.string().optional().describe("Login hint or username for the account portal"),
+    balance: z.number().optional(), balanceAsOf: z.string().optional(), includeInEmergencyFund: z.boolean().optional(),
+    website: z.string().url().optional(), contactPhone: z.string().optional(), documentLocation: z.string().optional(),
+    reviewDate: z.string().optional(), beneficiaryStatus: z.string().optional(), continuityNotes: z.string().optional(),
   },
   (params) =>
     wrap(() =>
       api.createAccount({
         institution: params.institution,
         purpose: params.purpose,
-        owner: params.owner,
+        personId: params.personId,
         category: params.category,
         accountNumber: params.accountNumber,
         notes: params.notes,
         loginHint: params.loginHint,
+        balance: params.balance, balanceAsOf: params.balanceAsOf, includeInEmergencyFund: params.includeInEmergencyFund,
+        website: params.website, contactPhone: params.contactPhone, documentLocation: params.documentLocation,
+        reviewDate: params.reviewDate, beneficiaryStatus: params.beneficiaryStatus, continuityNotes: params.continuityNotes,
       }),
     )(),
 );
@@ -495,22 +546,28 @@ server.tool(
     id: z.string().describe("ID of the account to update"),
     institution: z.string().optional().describe("New institution name"),
     purpose: z.string().optional().describe("New purpose/description"),
-    owner: z.enum(["self", "spouse", "joint", "child", "other"]).optional().describe("New owner"),
+    personId: z.string().optional().describe("New person owner ID"), clearPerson: z.boolean().optional().describe("Set joint ownership"),
     category: z.enum(["banking", "investment", "retirement", "property", "insurance", "other"]).optional().describe("New category"),
     accountNumber: z.string().optional().describe("New account number"),
     notes: z.string().optional().describe("New notes"),
     loginHint: z.string().optional().describe("New login hint"),
+    balance: z.number().optional(), balanceAsOf: z.string().optional(), includeInEmergencyFund: z.boolean().optional(),
+    website: z.string().url().optional(), contactPhone: z.string().optional(), documentLocation: z.string().optional(),
+    reviewDate: z.string().optional(), beneficiaryStatus: z.string().optional(), continuityNotes: z.string().optional(),
   },
   (params) =>
     wrap(() =>
       api.updateAccount(params.id, {
         institution: params.institution,
         purpose: params.purpose,
-        owner: params.owner,
+        personId: params.clearPerson ? null : params.personId,
         category: params.category,
         accountNumber: params.accountNumber,
         notes: params.notes,
         loginHint: params.loginHint,
+        balance: params.balance, balanceAsOf: params.balanceAsOf, includeInEmergencyFund: params.includeInEmergencyFund,
+        website: params.website, contactPhone: params.contactPhone, documentLocation: params.documentLocation,
+        reviewDate: params.reviewDate, beneficiaryStatus: params.beneficiaryStatus, continuityNotes: params.continuityNotes,
       }),
     )(),
 );
@@ -525,9 +582,35 @@ server.tool(
   (params) => wrap(() => api.deleteAccount(params.id))(),
 );
 
+server.tool("list_liabilities", "List stored household debts used for payoff planning and net-worth calculations.", {}, READ_ONLY, () => wrap(api.listLiabilities)());
+const liabilityFields = {
+  name: z.string(), lender: z.string().optional(), balance: z.number().positive(), annualRate: z.number().min(0).max(100),
+  minimumPayment: z.number().positive(), scheduledPayment: z.number().positive().optional(), balanceAsOf: z.string().optional(), notes: z.string().optional(),
+};
+server.tool("create_liability", "Create a stored household liability.", liabilityFields, (p) => wrap(() => api.createLiability(p))());
+server.tool("update_liability", "Update a stored household liability.", { id: z.string(), ...Object.fromEntries(Object.entries(liabilityFields).map(([k,v]) => [k, v.optional()])) }, (p) => { const { id, ...body } = p; return wrap(() => api.updateLiability(id, body))(); });
+server.tool("delete_liability", "Permanently delete a stored liability.", { id: z.string() }, DESTRUCTIVE, (p) => wrap(() => api.deleteLiability(p.id))());
+
+server.tool("list_scenarios", "List saved monthly what-if scenarios.", {}, READ_ONLY, () => wrap(api.listScenarios)());
+const scenarioFields = { name: z.string(), incomeAdjustment: z.number(), expenseAdjustment: z.number(), notes: z.string().optional() };
+server.tool("create_scenario", "Create a saved what-if scenario without changing the budget.", scenarioFields, (p) => wrap(() => api.createScenario(p))());
+server.tool("update_scenario", "Update a saved what-if scenario.", { id: z.string(), name: z.string().optional(), incomeAdjustment: z.number().optional(), expenseAdjustment: z.number().optional(), notes: z.string().optional() }, (p) => { const { id, ...body } = p; return wrap(() => api.updateScenario(id, body))(); });
+server.tool("delete_scenario", "Permanently delete a saved scenario.", { id: z.string() }, DESTRUCTIVE, (p) => wrap(() => api.deleteScenario(p.id))());
+
 // ── Start server ────────────────────────────────────────────────────────────
 
-if (process.env.NODE_ENV !== "test") {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+return rawServer;
 }
+
+async function main() {
+  if ((process.env.MCP_TRANSPORT || "stdio") !== "stdio" || process.env.NODE_ENV === "test") return;
+  assertRuntimeMode("stdio", "local_api_key");
+  const auth = await createAuthenticator("local_api_key").authenticate({});
+  const server = createFinanceTrackerServer({ invocationContext: { auth, credentials: createCredentialProvider("local_api_key") } });
+  await server.connect(new StdioServerTransport());
+}
+
+main().catch((error) => {
+  console.error("Fatal:", error);
+  process.exit(1);
+});

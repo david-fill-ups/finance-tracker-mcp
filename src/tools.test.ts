@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { server } from "./index.js";
+import { createFinanceTrackerServer } from "./index.js";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
+const server = createFinanceTrackerServer({
+  invocationContext: {
+    auth: { method: "local_api_key", principal: "local", scopes: new Set(["*"]) },
+    credentials: { getAuthorization: async () => "Bearer test" },
+  },
+});
 
 type Registered = {
   handler: (params: Record<string, unknown>) => Promise<unknown>;
@@ -46,5 +52,18 @@ describe("MCP tool registration", () => {
       spendingTier: null,
       minimumAmount: null,
     });
+  });
+
+  it("uses personId rather than the removed account owner enum", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 201, json: vi.fn().mockResolvedValue({ id: "a1" }) });
+    await tools.create_account.handler({ institution: "Bank", purpose: "Checking", personId: "person-1", category: "banking" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ personId: "person-1" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("owner");
+  });
+
+  it("registers liabilities and saved scenarios", () => {
+    expect(tools.list_liabilities.annotations).toMatchObject({ readOnlyHint: true });
+    expect(tools.delete_liability.annotations).toMatchObject({ destructiveHint: true });
+    expect(tools.list_scenarios.annotations).toMatchObject({ readOnlyHint: true });
   });
 });

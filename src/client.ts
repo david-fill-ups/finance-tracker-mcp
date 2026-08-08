@@ -3,8 +3,7 @@
 // ---------------------------------------------------------------------------
 
 const BASE_URL = process.env.FINANCE_TRACKER_URL ?? "http://localhost:3000";
-const API_KEY = process.env.FINANCE_TRACKER_API_KEY ?? "";
-const PROFILE_ID = process.env.FINANCE_TRACKER_PROFILE_ID ?? "";
+import { getRequestContext } from "./request-context.js";
 
 // ── String sanitization ──────────────────────────────────────────────────────
 
@@ -41,9 +40,10 @@ async function request<T>(
   const url = `${BASE_URL}${path}`;
   const hdrs: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${API_KEY}`,
+    Authorization: await getRequestContext().credentials.getAuthorization(getRequestContext().auth),
   };
-  if (PROFILE_ID) hdrs["X-Profile-Id"] = PROFILE_ID;
+  const profileId = getRequestContext().auth.activeProfileId;
+  if (profileId) hdrs["X-Profile-Id"] = profileId;
   const res = await fetch(url, {
     method,
     headers: hdrs,
@@ -121,6 +121,7 @@ export interface Expense {
   amount: number;
   frequency: "monthly" | "yearly" | "weekly" | "one_time";
   dueMonth?: number;
+  occurrenceDate?: string;
   type: "JOINT" | "PERSONAL";
   personId?: string;
   classification?: string;
@@ -130,6 +131,8 @@ export interface Expense {
   notes?: string;
   provider?: string;
   accountNumber?: string;
+  taxCategory?: "charitable" | "mortgage_interest" | "property_tax" | "medical" | "childcare" | "business" | "other";
+  deductiblePercent?: number;
   createdAt: string;
   updatedAt: string;
   person?: { id: string; name: string };
@@ -170,10 +173,20 @@ export interface AccountRecord {
   institution: string;
   purpose: string;
   accountNumber?: string;
-  owner: "self" | "spouse" | "joint" | "child" | "other";
+  personId?: string;
+  person?: { id: string; name: string; role?: string };
   category: "banking" | "investment" | "retirement" | "property" | "insurance" | "other";
   notes?: string;
   loginHint?: string;
+  balance?: number;
+  balanceAsOf?: string;
+  includeInEmergencyFund: boolean;
+  website?: string;
+  contactPhone?: string;
+  documentLocation?: string;
+  reviewDate?: string;
+  beneficiaryStatus?: string;
+  continuityNotes?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -246,6 +259,7 @@ export function createIncome(body: {
 }
 
 export function updateIncome(id: string, body: {
+  personId?: string;
   name?: string;
   amount?: number;
   frequency?: "monthly" | "yearly" | "weekly" | "one_time";
@@ -270,6 +284,7 @@ export function createExpense(body: {
   amount: number;
   frequency: "monthly" | "yearly" | "weekly" | "one_time";
   dueMonth?: number;
+  occurrenceDate?: string;
   type: "JOINT" | "PERSONAL";
   personId?: string;
   classification?: string;
@@ -279,6 +294,8 @@ export function createExpense(body: {
   notes?: string;
   provider?: string;
   accountNumber?: string;
+  taxCategory?: Expense["taxCategory"];
+  deductiblePercent?: number;
 }) {
   return request<Expense>("POST", "/api/expenses", body);
 }
@@ -288,6 +305,7 @@ export function updateExpense(id: string, body: {
   amount?: number;
   frequency?: "monthly" | "yearly" | "weekly" | "one_time";
   dueMonth?: number;
+  occurrenceDate?: string | null;
   type?: "JOINT" | "PERSONAL";
   personId?: string;
   classification?: string;
@@ -297,6 +315,8 @@ export function updateExpense(id: string, body: {
   notes?: string;
   provider?: string;
   accountNumber?: string;
+  taxCategory?: Expense["taxCategory"] | null;
+  deductiblePercent?: number | null;
 }) {
   return request<Expense>("PATCH", `/api/expenses/${id}`, body);
 }
@@ -401,11 +421,14 @@ export const listAllAccounts = () => allPages(listAccounts);
 export function createAccount(body: {
   institution: string;
   purpose: string;
-  owner: "self" | "spouse" | "joint" | "child" | "other";
+  personId?: string | null;
   category: "banking" | "investment" | "retirement" | "property" | "insurance" | "other";
   accountNumber?: string;
   notes?: string;
   loginHint?: string;
+  balance?: number | null; balanceAsOf?: string | null; includeInEmergencyFund?: boolean;
+  website?: string | null; contactPhone?: string | null; documentLocation?: string | null;
+  reviewDate?: string | null; beneficiaryStatus?: string | null; continuityNotes?: string | null;
 }) {
   return request<AccountRecord>("POST", "/api/accounts", body);
 }
@@ -413,11 +436,14 @@ export function createAccount(body: {
 export function updateAccount(id: string, body: {
   institution?: string;
   purpose?: string;
-  owner?: "self" | "spouse" | "joint" | "child" | "other";
+  personId?: string | null;
   category?: "banking" | "investment" | "retirement" | "property" | "insurance" | "other";
   accountNumber?: string;
   notes?: string;
   loginHint?: string;
+  balance?: number | null; balanceAsOf?: string | null; includeInEmergencyFund?: boolean;
+  website?: string | null; contactPhone?: string | null; documentLocation?: string | null;
+  reviewDate?: string | null; beneficiaryStatus?: string | null; continuityNotes?: string | null;
 }) {
   return request<AccountRecord>("PATCH", `/api/accounts/${id}`, body);
 }
@@ -425,3 +451,14 @@ export function updateAccount(id: string, body: {
 export function deleteAccount(id: string) {
   return request<void>("DELETE", `/api/accounts/${id}`);
 }
+
+export interface Liability { id: string; name: string; lender?: string; balance: number; annualRate: number; minimumPayment: number; scheduledPayment?: number; balanceAsOf?: string; notes?: string; }
+export interface SavedScenario { id: string; name: string; incomeAdjustment: number; expenseAdjustment: number; notes?: string; }
+export function listLiabilities() { return request<Liability[]>("GET", "/api/liabilities"); }
+export function createLiability(body: Omit<Liability, "id">) { return request<Liability>("POST", "/api/liabilities", body); }
+export function updateLiability(id: string, body: Partial<Omit<Liability, "id">>) { return request<Liability>("PATCH", `/api/liabilities/${id}`, body); }
+export function deleteLiability(id: string) { return request<void>("DELETE", `/api/liabilities/${id}`); }
+export function listScenarios() { return request<SavedScenario[]>("GET", "/api/scenarios"); }
+export function createScenario(body: Omit<SavedScenario, "id">) { return request<SavedScenario>("POST", "/api/scenarios", body); }
+export function updateScenario(id: string, body: Partial<Omit<SavedScenario, "id">>) { return request<SavedScenario>("PATCH", `/api/scenarios/${id}`, body); }
+export function deleteScenario(id: string) { return request<void>("DELETE", `/api/scenarios/${id}`); }
