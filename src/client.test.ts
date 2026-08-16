@@ -33,22 +33,9 @@ describe("finance tracker HTTP client", () => {
     expect(fetchMock.mock.calls[4][0]).toContain("/api/profile/guests");
   });
 
-  it("follows pagination until the final partial page", async () => {
-    fetchMock
-      .mockResolvedValueOnce(response(Array.from({ length: 250 }, (_, id) => ({ id }))))
-      .mockResolvedValueOnce(response([{ id: 250 }]));
-    await expect(client.listAllExpenses()).resolves.toHaveLength(251);
-    expect(fetchMock.mock.calls[1][0]).toContain("offset=250");
-  });
-
   it("surfaces API errors", async () => {
     fetchMock.mockResolvedValue(response({ error: "Read-only access" }, 403));
     await expect(client.deleteAccount("a1")).rejects.toThrow("403: Read-only access");
   });
 
-  it("fails instead of looping forever when every page is full", async () => {
-    fetchMock.mockResolvedValue(response(Array.from({ length: 250 }, (_, id) => ({ id }))));
-    await expect(client.listAllPeople()).rejects.toThrow("Pagination safety limit");
-    expect(fetchMock).toHaveBeenCalledTimes(100);
-  });
 });

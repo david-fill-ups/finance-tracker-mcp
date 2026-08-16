@@ -1,4 +1,11 @@
 # Finance Tracker MCP
+## Response size controls
+
+Paginated growing-list tools return one page rather than silently downloading every page. Unless a tool documents another value, the default page size is 25 and the maximum is 100. Use the returned total/page/cursor information to request another page.
+
+List tools with a `fields` argument use compact tool-specific defaults. Pass a field-name array to override them, dot notation for nested fields, or `["*"]` when every ordinary JSON field is genuinely required. Omitting `fields` at the underlying tracker API remains backward compatible and returns the full ordinary response. Binary downloads remain separate and are never included merely because metadata fields were requested.
+
+Write tools reject strings beyond the limits documented by the tracker API. They do not silently truncate content.
 
 Private stdio MCP server for the Finance Tracker HTTP API. Every tool runs with the single PAT configured for the process; this is not an authenticated multi-user hosted transport.
 

@@ -123,11 +123,12 @@ server.tool(
   "list_people",
   "List all people in the household. Returns each person's name, role (self/spouse/dependent), their income sources, and expense count. Supports pagination via limit and offset.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listPeople(params) : api.listAllPeople())(),
+  (params) => wrap(() => api.listPeople({ ...params, fields: params.fields?.join(",") ?? "id,name,role" }))(),
 );
 
 server.tool(
@@ -167,11 +168,12 @@ server.tool(
   "list_income",
   "List all income sources. Returns each income's name, amount, frequency (monthly/yearly/weekly/one_time), optional due month, notes, and the associated person. Supports pagination.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listIncome(params) : api.listAllIncome())(),
+  (params) => wrap(() => api.listIncome({ ...params, fields: params.fields?.join(",") ?? "id,name,amount,frequency,dueMonth,person.id,person.name" }))(),
 );
 
 server.tool(
@@ -239,11 +241,12 @@ server.tool(
   "list_expenses",
   "List all expenses. Returns each expense's name, amount, frequency, type (JOINT or PERSONAL), category, provider, and associated person. Supports pagination.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listExpenses(params) : api.listAllExpenses())(),
+  (params) => wrap(() => api.listExpenses({ ...params, fields: params.fields?.join(",") ?? "id,name,amount,frequency,type,person.id,person.name,category.id,category.name" }))(),
 );
 
 server.tool(
@@ -356,11 +359,12 @@ server.tool(
   "list_categories",
   "List all expense categories. Returns each category's name, optional budget target, and a count of associated expenses. Supports pagination.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listCategories(params) : api.listAllCategories())(),
+  (params) => wrap(() => api.listCategories({ ...params, fields: params.fields?.join(",") ?? "id,name,budgetTarget,_count" }))(),
 );
 
 server.tool(
@@ -400,11 +404,12 @@ server.tool(
   "list_loans",
   "List all loan borrowers. Returns each borrower's name, notes, and all their loan transactions (loans given, payments received, write-offs). Supports pagination.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listLoans(params) : api.listAllLoans())(),
+  (params) => wrap(() => api.listLoans({ ...params, fields: params.fields?.join(",") ?? "id,name,notes" }))(),
 );
 
 server.tool(
@@ -500,11 +505,12 @@ server.tool(
   "list_accounts",
   "List all financial accounts with household owner, balance, emergency-fund designation, and continuity details. Supports pagination.",
   {
-    limit: z.number().int().min(1).max(250).optional().describe("Max records (1-250)"),
+    limit: z.number().int().min(1).max(100).default(25).describe("Max records (1-100; default 25)"),
     offset: z.number().int().min(0).optional().describe("Number of records to skip"),
+    fields: z.array(z.string()).optional().describe("Fields to return; use ['*'] for all fields"),
   },
   READ_ONLY,
-  (params) => wrap(() => params.limit || params.offset ? api.listAccounts(params) : api.listAllAccounts())(),
+  (params) => wrap(() => api.listAccounts({ ...params, fields: params.fields?.join(",") ?? "id,institution,purpose,category,balance,balanceAsOf,includeInEmergencyFund,person.id,person.name" }))(),
 );
 
 server.tool(
@@ -582,19 +588,19 @@ server.tool(
   (params) => wrap(() => api.deleteAccount(params.id))(),
 );
 
-server.tool("list_liabilities", "List stored household debts used for payoff planning and net-worth calculations.", {}, READ_ONLY, () => wrap(api.listLiabilities)());
+server.tool("list_liabilities", "List stored household debts used for payoff planning and net-worth calculations.", { limit:z.number().int().min(1).max(100).default(25), offset:z.number().int().min(0).optional(), fields:z.array(z.string()).optional() }, READ_ONLY, (p) => wrap(() => api.listLiabilities({...p,fields:p.fields?.join(",")??"id,name,lender,balance,annualRate,minimumPayment,scheduledPayment,balanceAsOf"}))());
 const liabilityFields = {
-  name: z.string(), lender: z.string().optional(), balance: z.number().positive(), annualRate: z.number().min(0).max(100),
-  minimumPayment: z.number().positive(), scheduledPayment: z.number().positive().optional(), balanceAsOf: z.string().optional(), notes: z.string().optional(),
+  name: z.string().min(1).max(100), lender: z.string().max(100).optional(), balance: z.number().positive(), annualRate: z.number().min(0).max(100),
+  minimumPayment: z.number().positive(), scheduledPayment: z.number().positive().optional(), balanceAsOf: z.string().optional(), notes: z.string().max(500).optional(),
 };
 server.tool("create_liability", "Create a stored household liability.", liabilityFields, (p) => wrap(() => api.createLiability(p))());
 server.tool("update_liability", "Update a stored household liability.", { id: z.string(), ...Object.fromEntries(Object.entries(liabilityFields).map(([k,v]) => [k, v.optional()])) }, (p) => { const { id, ...body } = p; return wrap(() => api.updateLiability(id, body))(); });
 server.tool("delete_liability", "Permanently delete a stored liability.", { id: z.string() }, DESTRUCTIVE, (p) => wrap(() => api.deleteLiability(p.id))());
 
-server.tool("list_scenarios", "List saved monthly what-if scenarios.", {}, READ_ONLY, () => wrap(api.listScenarios)());
-const scenarioFields = { name: z.string(), incomeAdjustment: z.number(), expenseAdjustment: z.number(), notes: z.string().optional() };
+server.tool("list_scenarios", "List saved monthly what-if scenarios.", { limit:z.number().int().min(1).max(100).default(25), offset:z.number().int().min(0).optional(), fields:z.array(z.string()).optional() }, READ_ONLY, (p) => wrap(() => api.listScenarios({...p,fields:p.fields?.join(",")??"id,name,incomeAdjustment,expenseAdjustment"}))());
+const scenarioFields = { name: z.string().min(1).max(100), incomeAdjustment: z.number(), expenseAdjustment: z.number(), notes: z.string().max(500).optional() };
 server.tool("create_scenario", "Create a saved what-if scenario without changing the budget.", scenarioFields, (p) => wrap(() => api.createScenario(p))());
-server.tool("update_scenario", "Update a saved what-if scenario.", { id: z.string(), name: z.string().optional(), incomeAdjustment: z.number().optional(), expenseAdjustment: z.number().optional(), notes: z.string().optional() }, (p) => { const { id, ...body } = p; return wrap(() => api.updateScenario(id, body))(); });
+server.tool("update_scenario", "Update a saved what-if scenario.", { id: z.string(), name: z.string().min(1).max(100).optional(), incomeAdjustment: z.number().optional(), expenseAdjustment: z.number().optional(), notes: z.string().max(500).optional() }, (p) => { const { id, ...body } = p; return wrap(() => api.updateScenario(id, body))(); });
 server.tool("delete_scenario", "Permanently delete a saved scenario.", { id: z.string() }, DESTRUCTIVE, (p) => wrap(() => api.deleteScenario(p.id))());
 
 // ── Start server ────────────────────────────────────────────────────────────

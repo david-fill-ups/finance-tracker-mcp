@@ -225,7 +225,9 @@ export function removeGuest(guestId: string) {
 
 // ── People ──────────────────────────────────────────────────────────────────
 
-export function listPeople(params: { limit?: number; offset?: number } = {}) {
+export interface ListParams extends Record<string, unknown> { limit?: number; offset?: number; fields?: string }
+
+export function listPeople(params: ListParams = {}) {
   return request<Person[]>("GET", `/api/people${qs(params)}`);
 }
 
@@ -243,7 +245,7 @@ export function deletePerson(id: string) {
 
 // ── Income ──────────────────────────────────────────────────────────────────
 
-export function listIncome(params: { limit?: number; offset?: number } = {}) {
+export function listIncome(params: ListParams = {}) {
   return request<IncomeSource[]>("GET", `/api/income${qs(params)}`);
 }
 
@@ -275,7 +277,7 @@ export function deleteIncome(id: string) {
 
 // ── Expenses ────────────────────────────────────────────────────────────────
 
-export function listExpenses(params: { limit?: number; offset?: number } = {}) {
+export function listExpenses(params: ListParams = {}) {
   return request<Expense[]>("GET", `/api/expenses${qs(params)}`);
 }
 
@@ -327,7 +329,7 @@ export function deleteExpense(id: string) {
 
 // ── Categories ──────────────────────────────────────────────────────────────
 
-export function listCategories(params: { limit?: number; offset?: number } = {}) {
+export function listCategories(params: ListParams = {}) {
   return request<Category[]>("GET", `/api/categories${qs(params)}`);
 }
 
@@ -345,7 +347,7 @@ export function deleteCategory(id: string) {
 
 // ── Loans (Borrowers) ───────────────────────────────────────────────────────
 
-export function listLoans(params: { limit?: number; offset?: number } = {}) {
+export function listLoans(params: ListParams = {}) {
   return request<Borrower[]>("GET", `/api/loans${qs(params)}`);
 }
 
@@ -394,29 +396,9 @@ export function deleteLoanTransaction(loanId: string, txId: string) {
 
 // ── Accounts ────────────────────────────────────────────────────────────────
 
-export function listAccounts(params: { limit?: number; offset?: number } = {}) {
+export function listAccounts(params: ListParams = {}) {
   return request<AccountRecord[]>("GET", `/api/accounts${qs(params)}`);
 }
-
-async function allPages<T>(load: (params: { limit: number; offset: number }) => Promise<T[]>): Promise<T[]> {
-  const items: T[] = [];
-  const limit = 250;
-  const maxPages = 100;
-  for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {
-    const offset = pageNumber * limit;
-    const page = await load({ limit, offset });
-    items.push(...page);
-    if (page.length < limit) return items;
-  }
-  throw new Error(`Pagination safety limit reached (${maxPages * limit} records)`);
-}
-
-export const listAllPeople = () => allPages(listPeople);
-export const listAllIncome = () => allPages(listIncome);
-export const listAllExpenses = () => allPages(listExpenses);
-export const listAllCategories = () => allPages(listCategories);
-export const listAllLoans = () => allPages(listLoans);
-export const listAllAccounts = () => allPages(listAccounts);
 
 export function createAccount(body: {
   institution: string;
@@ -454,11 +436,11 @@ export function deleteAccount(id: string) {
 
 export interface Liability { id: string; name: string; lender?: string; balance: number; annualRate: number; minimumPayment: number; scheduledPayment?: number; balanceAsOf?: string; notes?: string; }
 export interface SavedScenario { id: string; name: string; incomeAdjustment: number; expenseAdjustment: number; notes?: string; }
-export function listLiabilities() { return request<Liability[]>("GET", "/api/liabilities"); }
+export function listLiabilities(params: ListParams = {}) { return request<Liability[]>("GET", `/api/liabilities${qs(params)}`); }
 export function createLiability(body: Omit<Liability, "id">) { return request<Liability>("POST", "/api/liabilities", body); }
 export function updateLiability(id: string, body: Partial<Omit<Liability, "id">>) { return request<Liability>("PATCH", `/api/liabilities/${id}`, body); }
 export function deleteLiability(id: string) { return request<void>("DELETE", `/api/liabilities/${id}`); }
-export function listScenarios() { return request<SavedScenario[]>("GET", "/api/scenarios"); }
+export function listScenarios(params: ListParams = {}) { return request<SavedScenario[]>("GET", `/api/scenarios${qs(params)}`); }
 export function createScenario(body: Omit<SavedScenario, "id">) { return request<SavedScenario>("POST", "/api/scenarios", body); }
 export function updateScenario(id: string, body: Partial<Omit<SavedScenario, "id">>) { return request<SavedScenario>("PATCH", `/api/scenarios/${id}`, body); }
 export function deleteScenario(id: string) { return request<void>("DELETE", `/api/scenarios/${id}`); }
